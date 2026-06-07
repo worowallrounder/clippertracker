@@ -10,12 +10,11 @@ import { CheckCircle2, XCircle, Clock, Link as LinkIcon, Send } from 'lucide-rea
 const ClipperDashboard = () => {
   const { profile } = useAuth();
   const [accounts, setAccounts] = useState([]);
-  const [styles, setStyles] = useState([]);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [quota, setQuota] = useState(10);
+  const [quota, setQuota] = useState(4);
   
-  const [form, setForm] = useState({ urls: '', account_id: '', style_id: '' });
+  const [form, setForm] = useState({ urls: '', account_id: '' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -35,7 +34,6 @@ const ClipperDashboard = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      // Fetch accounts
       const { data: accData } = await supabase
         .from('accounts')
         .select('*')
@@ -43,22 +41,13 @@ const ClipperDashboard = () => {
       
       if (accData) setAccounts(accData);
 
-      // Fetch styles
-      const { data: styleData } = await supabase
-        .from('styles')
-        .select('*')
-        .eq('active', true);
-      
-      if (styleData) setStyles(styleData);
-
-      // Fetch quota
       const { data: settings } = await supabase.from('global_settings').select('daily_quota_per_account').single();
-      if (settings) setQuota(settings.daily_quota_per_account);
+      // Enforce a fixed quota of 4 posts per account per day
+      setQuota(4);
 
-      // Fetch today's posts
       const { data: postData } = await supabase
         .from('posts')
-        .select('*, styles(name), accounts(account_label)')
+        .select('*, accounts(account_label)')
         .eq('clipper_id', profile.clipper_id)
         .eq('post_date', today);
         
@@ -87,21 +76,24 @@ const ClipperDashboard = () => {
     setError('');
     setSuccess('');
     
-    if (!form.account_id || !form.style_id || !form.urls) {
-      setError('Please fill in all fields.');
+    if (!form.account_id || !form.urls) {
+      setError('Please select an account and paste your URLs.');
       return;
     }
 
     const selectedAccount = accounts.find(a => a.id === form.account_id);
     
-    // Process URLs (split by newline or comma)
     const urlList = form.urls
       .split(/[\n,]+/)
       .map(u => u.trim())
       .filter(u => u.length > 0);
 
-    if (urlList.length > 10) {
-      setError('You can submit a maximum of 10 links at once.');
+    // Check how many posts already exist for this account today
+    const existingPosts = posts.filter(p => p.account_id === form.account_id);
+    const remaining = quota - existingPosts.length;
+
+    if (urlList.length > remaining) {
+      setError(`You can only submit ${remaining} more post(s) for this account today. (Quota: ${quota})`);
       return;
     }
 
@@ -117,7 +109,6 @@ const ClipperDashboard = () => {
       const inserts = urlList.map(url => ({
         clipper_id: profile.clipper_id,
         account_id: form.account_id,
-        style_id: form.style_id,
         post_url: url,
         post_date: today,
         status: 'pending'
@@ -128,8 +119,8 @@ const ClipperDashboard = () => {
       if (insertError) throw insertError;
       
       setSuccess(`Successfully submitted ${urlList.length} post(s)!`);
-      setForm({ urls: '', account_id: '', style_id: '' });
-      fetchData(); // Refresh data
+      setForm({ urls: '', account_id: '' });
+      fetchData();
     } catch (err) {
       setError(err.message || 'Error submitting posts.');
     } finally {
@@ -157,10 +148,10 @@ const ClipperDashboard = () => {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Your Dashboard</h1>
-        <p className="text-text-muted">Submit your completed clips and track your daily quota.</p>
+        <p className="text-text-muted">Submit your completed clips and track your daily quota ({quota} posts per account).</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {accounts.map(acc => {
           const accPosts = posts.filter(p => p.account_id === acc.id);
           const progress = Math.min((accPosts.length / quota) * 100, 100);
@@ -211,23 +202,15 @@ const ClipperDashboard = () => {
                     onChange={e => setForm({...form, account_id: e.target.value})}
                   >
                     <option value="">Select Account</option>
-                    {accounts.map(acc => (
-                      <option key={acc.id} value={acc.id}>{acc.account_label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Style</label>
-                  <select 
-                    className="flex h-10 w-full rounded-lg border border-gray-200 bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    value={form.style_id}
-                    onChange={e => setForm({...form, style_id: e.target.value})}
-                  >
-                    <option value="">Select Style</option>
-                    {styles.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
+                    {accounts.map(acc => {
+                      const accPosts = posts.filter(p => p.account_id === acc.id);
+                      const remaining = quota - accPosts.length;
+                      return (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.account_label} ({acc.platform}) — {remaining > 0 ? `${remaining} left` : 'Full'}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
@@ -266,7 +249,6 @@ const ClipperDashboard = () => {
                   <tr>
                     <th className="px-4 py-3 font-medium text-text-muted">Link</th>
                     <th className="px-4 py-3 font-medium text-text-muted">Account</th>
-                    <th className="px-4 py-3 font-medium text-text-muted">Style</th>
                     <th className="px-4 py-3 font-medium text-text-muted">Status</th>
                   </tr>
                 </thead>
@@ -275,12 +257,11 @@ const ClipperDashboard = () => {
                     <tr key={post.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 max-w-[200px] truncate">
                         <a href={post.post_url} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline flex items-center gap-1">
-                          <LinkIcon className="w-3 h-3" />
+                          <LinkIcon className="w-3 h-3 flex-shrink-0" />
                           <span className="truncate">{post.post_url}</span>
                         </a>
                       </td>
                       <td className="px-4 py-3">{post.accounts?.account_label}</td>
-                      <td className="px-4 py-3"><span className="bg-gray-100 px-2 py-1 rounded-md text-xs">{post.styles?.name}</span></td>
                       <td className="px-4 py-3">
                         {post.status === 'pending' && <span className="flex items-center gap-1 text-yellow-600"><Clock className="w-4 h-4"/> Pending</span>}
                         {post.status === 'approved' && <span className="flex items-center gap-1 text-green-600"><CheckCircle2 className="w-4 h-4"/> Approved</span>}

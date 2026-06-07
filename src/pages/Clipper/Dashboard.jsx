@@ -19,6 +19,16 @@ const ClipperDashboard = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const [setupForm, setSetupForm] = useState({
+    name: '',
+    tiktok1: '',
+    tiktok2: '',
+    tiktok3: '',
+    instagram: '',
+  });
+  const [setupError, setSetupError] = useState('');
+  const [setupSubmitting, setSetupSubmitting] = useState(false);
+
   const today = format(new Date(), 'yyyy-MM-dd');
 
   useEffect(() => {
@@ -34,6 +44,18 @@ const ClipperDashboard = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+
+      // Fetch Clipper details
+      const { data: clipData } = await supabase
+        .from('clippers')
+        .select('name')
+        .eq('id', profile.clipper_id)
+        .single();
+      
+      if (clipData) {
+        setSetupForm(prev => ({ ...prev, name: clipData.name }));
+      }
+
       const { data: accData } = await supabase
         .from('accounts')
         .select('*')
@@ -41,7 +63,6 @@ const ClipperDashboard = () => {
       
       if (accData) setAccounts(accData);
 
-      const { data: settings } = await supabase.from('global_settings').select('daily_quota_per_account').single();
       // Enforce a fixed quota of 4 posts per account per day
       setQuota(4);
 
@@ -68,6 +89,79 @@ const ClipperDashboard = () => {
       return true;
     } catch {
       return false;
+    }
+  };
+
+  const handleSetupSubmit = async (e) => {
+    e.preventDefault();
+    setSetupError('');
+    setSetupSubmitting(true);
+
+    const { name, tiktok1, tiktok2, tiktok3, instagram } = setupForm;
+
+    if (!name.trim()) {
+      setSetupError('Display Name is required.');
+      setSetupSubmitting(false);
+      return;
+    }
+
+    if (!tiktok1.trim() || !tiktok2.trim() || !tiktok3.trim() || !instagram.trim()) {
+      setSetupError('Please fill in all 3 TikTok URLs and the 1 Instagram URL.');
+      setSetupSubmitting(false);
+      return;
+    }
+
+    // Validate URLs
+    if (!validateUrl(tiktok1, 'tiktok')) {
+      setSetupError('TikTok 1 URL is invalid (must include tiktok.com).');
+      setSetupSubmitting(false);
+      return;
+    }
+    if (!validateUrl(tiktok2, 'tiktok')) {
+      setSetupError('TikTok 2 URL is invalid (must include tiktok.com).');
+      setSetupSubmitting(false);
+      return;
+    }
+    if (!validateUrl(tiktok3, 'tiktok')) {
+      setSetupError('TikTok 3 URL is invalid (must include tiktok.com).');
+      setSetupSubmitting(false);
+      return;
+    }
+    if (!validateUrl(instagram, 'instagram')) {
+      setSetupError('Instagram URL is invalid (must include instagram.com).');
+      setSetupSubmitting(false);
+      return;
+    }
+
+    try {
+      // 1. Update clipper name
+      const { error: nameError } = await supabase
+        .from('clippers')
+        .update({ name: name.trim() })
+        .eq('id', profile.clipper_id);
+
+      if (nameError) throw nameError;
+
+      // 2. Insert the 4 accounts
+      const accountsToInsert = [
+        { clipper_id: profile.clipper_id, platform: 'tiktok', account_label: 'TikTok 1', account_url: tiktok1.trim() },
+        { clipper_id: profile.clipper_id, platform: 'tiktok', account_label: 'TikTok 2', account_url: tiktok2.trim() },
+        { clipper_id: profile.clipper_id, platform: 'tiktok', account_label: 'TikTok 3', account_url: tiktok3.trim() },
+        { clipper_id: profile.clipper_id, platform: 'instagram', account_label: 'Instagram', account_url: instagram.trim() }
+      ];
+
+      const { error: accError } = await supabase
+        .from('accounts')
+        .insert(accountsToInsert);
+
+      if (accError) throw accError;
+
+      // 3. Refresh data to transition to dashboard
+      await fetchData();
+    } catch (err) {
+      setSetupError(err.message || 'Error saving setup.');
+    } finally {
+      setSetupSubmitting(false);
     }
   };
 
@@ -128,7 +222,7 @@ const ClipperDashboard = () => {
     }
   };
 
-  if (loading) return <div>Loading dashboard...</div>;
+  if (loading) return <div className="p-8 text-center text-text-muted">Loading dashboard...</div>;
 
   if (!profile?.clipper_id) {
     return (
@@ -140,6 +234,94 @@ const ClipperDashboard = () => {
         <p className="text-text-muted max-w-md mx-auto">
           Your account was created successfully! However, your admin has not yet linked you to your specific TikTok/Instagram accounts. Please let your admin know you have registered.
         </p>
+      </div>
+    );
+  }
+
+  if (accounts.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6 py-6 px-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Set Up Your Clipper Profile</h1>
+          <p className="text-text-muted text-sm">Fill in your display name and link your 3 TikTok accounts and 1 Instagram account to begin.</p>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Initial Profile Setup</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSetupSubmit} className="space-y-4">
+              {setupError && <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">{setupError}</div>}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Display Name / Clipper Name</label>
+                <Input
+                  type="text"
+                  placeholder="e.g. Alex Smith"
+                  value={setupForm.name}
+                  onChange={e => setSetupForm({ ...setupForm, name: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="border-t border-gray-100 my-4 pt-4">
+                <h3 className="font-medium text-sm mb-3">Your Social Accounts (3 TikTok + 1 Instagram)</h3>
+                <p className="text-xs text-text-muted mb-4">You must enter a valid profile URL for each slot. E.g., https://www.tiktok.com/@username</p>
+                
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-text-muted">TikTok Account 1 Link</label>
+                    <Input
+                      type="url"
+                      placeholder="https://www.tiktok.com/@your_username_1"
+                      value={setupForm.tiktok1}
+                      onChange={e => setSetupForm({ ...setupForm, tiktok1: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-text-muted">TikTok Account 2 Link</label>
+                    <Input
+                      type="url"
+                      placeholder="https://www.tiktok.com/@your_username_2"
+                      value={setupForm.tiktok2}
+                      onChange={e => setSetupForm({ ...setupForm, tiktok2: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-text-muted">TikTok Account 3 Link</label>
+                    <Input
+                      type="url"
+                      placeholder="https://www.tiktok.com/@your_username_3"
+                      value={setupForm.tiktok3}
+                      onChange={e => setSetupForm({ ...setupForm, tiktok3: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-text-muted">Instagram Account Link</label>
+                    <Input
+                      type="url"
+                      placeholder="https://www.instagram.com/your_username"
+                      value={setupForm.instagram}
+                      onChange={e => setSetupForm({ ...setupForm, instagram: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <Button type="submit" className="w-full mt-4" disabled={setupSubmitting}>
+                {setupSubmitting ? 'Saving Profile...' : 'Complete Setup & Open Dashboard'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
       </div>
     );
   }

@@ -317,6 +317,64 @@ const AdminDashboard = () => {
         </div>
       )}
 
+      {/* Clippers Status */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold">Clippers Status</h2>
+        <div className="bg-surface rounded-xl border border-gray-100 overflow-hidden">
+          {clippers.length === 0 ? (
+            <div className="p-12 text-center">
+              <p className="text-text-muted font-medium">No clippers yet</p>
+              <p className="text-text-muted text-sm mt-1">New clippers will appear here once they setup their profile.</p>
+            </div>
+          ) : (
+            <table className="w-full text-sm text-left">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="px-6 py-4 font-medium text-text-muted">Clipper</th>
+                  <th className="px-6 py-4 font-medium text-text-muted">Progress (Accounts)</th>
+                  <th className="px-6 py-4 font-medium text-text-muted text-right">Pending</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {clippers.map(clipper => {
+                  const clipperPosts = posts.filter(p => p.clipper_id === clipper.id);
+                  const clipperAccounts = accounts.filter(a => a.clipper_id === clipper.id);
+                  const expectedPosts = clipperAccounts.length * quota;
+                  const progress = expectedPosts > 0 ? Math.min((clipperPosts.length / expectedPosts) * 100, 100) : 0;
+                  const pendingCount = clipperPosts.filter(p => p.status === 'pending').length;
+
+                  return (
+                    <tr key={clipper.id} className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => setSelectedClipper(clipper)}>
+                      <td className="px-6 py-4 font-medium">{clipper.name}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-full max-w-[200px] h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full transition-all ${progress === 100 ? 'bg-green-500' : 'bg-primary-500'}`} 
+                              style={{ width: `${progress}%` }} 
+                            />
+                          </div>
+                          <span className="text-xs text-text-muted w-12">{clipperPosts.length}/{expectedPosts}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {pendingCount > 0 ? (
+                          <span className="inline-flex items-center px-2 py-1 bg-yellow-50 text-yellow-700 text-xs font-medium rounded-md">
+                            {pendingCount} pending
+                          </span>
+                        ) : (
+                          <span className="text-text-muted text-xs">0</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
       {/* Today's Submissions */}
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Today's Submissions</h2>

@@ -283,8 +283,8 @@ const AdminDashboard = () => {
         </Card>
         <Card>
           <CardContent className="p-6">
-            <div className="text-text-muted text-sm font-medium mb-2">Daily Quota</div>
-            <div className="text-2xl font-bold">{totalQuota}</div>
+            <div className="text-text-muted text-sm font-medium mb-2">Daily Clips</div>
+            <div className="text-2xl font-bold">{totalSubmitted} / {totalQuota}</div>
           </CardContent>
         </Card>
         <Card>
